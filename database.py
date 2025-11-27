@@ -12,16 +12,22 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 logger = logging.getLogger(__name__)
 
 # Initialize Supabase client
+supabase = None
 try:
-    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+    if SUPABASE_URL and SUPABASE_KEY:
+        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+        logger.info("Supabase client initialized successfully")
 except Exception as e:
     logger.error(f"Failed to initialize Supabase client: {e}")
-    supabase = None
 
 
 def create_user(user_id: int, username: str, first_name: str):
     """Create a new user with initial 30 USDT balance."""
     try:
+        if not supabase:
+            logger.error("Supabase client not initialized")
+            return None
+            
         referral_code = str(uuid.uuid4())[:8]
         
         data = {
@@ -43,6 +49,9 @@ def create_user(user_id: int, username: str, first_name: str):
 def get_user(user_id: int):
     """Get user by user_id."""
     try:
+        if not supabase:
+            return None
+            
         response = supabase.table("users").select("*").eq("user_id", user_id).execute()
         return response.data[0] if response.data else None
     except Exception as e:
@@ -53,6 +62,9 @@ def get_user(user_id: int):
 def get_user_by_referral_code(referral_code: str):
     """Get user by referral code."""
     try:
+        if not supabase:
+            return None
+            
         response = supabase.table("users").select("*").eq("referral_code", referral_code).execute()
         return response.data[0] if response.data else None
     except Exception as e:
@@ -63,6 +75,9 @@ def get_user_by_referral_code(referral_code: str):
 def add_referral(referrer_id: int, referred_user_id: int):
     """Add a referral record and update referral count."""
     try:
+        if not supabase:
+            return
+            
         data = {
             "referrer_id": referrer_id,
             "referred_user_id": referred_user_id,
@@ -73,7 +88,7 @@ def add_referral(referrer_id: int, referred_user_id: int):
         # Update referral count
         user = get_user(referrer_id)
         if user:
-            new_count = user["referral_count"] + 1
+            new_count = user.get("referral_count", 0) + 1
             supabase.table("users").update({"referral_count": new_count}).eq("user_id", referrer_id).execute()
     except Exception as e:
         logger.error(f"Error adding referral: {e}")
@@ -83,7 +98,7 @@ def get_referral_count(user_id: int) -> int:
     """Get the number of referrals for a user."""
     try:
         user = get_user(user_id)
-        return user["referral_count"] if user else 0
+        return user.get("referral_count", 0) if user else 0
     except Exception as e:
         logger.error(f"Error getting referral count: {e}")
         return 0
@@ -93,7 +108,9 @@ def get_balance(user_id: int) -> float:
     """Get user balance."""
     try:
         user = get_user(user_id)
-        return float(user["balance"]) if user else 0.0
+        if user:
+            return float(user.get("balance", 0.0))
+        return 0.0
     except Exception as e:
         logger.error(f"Error getting balance: {e}")
         return 0.0
@@ -102,9 +119,12 @@ def get_balance(user_id: int) -> float:
 def update_balance(user_id: int, amount: float):
     """Update user balance."""
     try:
+        if not supabase:
+            return
+            
         user = get_user(user_id)
         if user:
-            new_balance = float(user["balance"]) + amount
+            new_balance = float(user.get("balance", 0.0)) + amount
             supabase.table("users").update({"balance": new_balance}).eq("user_id", user_id).execute()
     except Exception as e:
         logger.error(f"Error updating balance: {e}")
@@ -113,6 +133,9 @@ def update_balance(user_id: int, amount: float):
 def create_withdrawal_request(user_id: int, wallet_address: str, amount: float):
     """Create a withdrawal request."""
     try:
+        if not supabase:
+            return None
+            
         data = {
             "user_id": user_id,
             "wallet_address": wallet_address,
@@ -130,6 +153,9 @@ def create_withdrawal_request(user_id: int, wallet_address: str, amount: float):
 def get_pending_withdrawal(user_id: int):
     """Get pending withdrawal for a user."""
     try:
+        if not supabase:
+            return None
+            
         response = supabase.table("withdrawals").select("*").eq("user_id", user_id).eq("status", "pending").execute()
         return response.data[0] if response.data else None
     except Exception as e:
@@ -140,6 +166,9 @@ def get_pending_withdrawal(user_id: int):
 def update_withdrawal_status(withdrawal_id: int, status: str):
     """Update withdrawal status."""
     try:
+        if not supabase:
+            return
+            
         supabase.table("withdrawals").update({"status": status}).eq("id", withdrawal_id).execute()
     except Exception as e:
         logger.error(f"Error updating withdrawal status: {e}")
