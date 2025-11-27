@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: telegram-referral-bot
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot.py
+    envVars:
+      - key: BOT_TOKEN
+        scope: build
+      - key: ADMIN_CHAT_ID
+        scope: build
+      - key: SUPABASE_URL
+        scope: build
+      - key: SUPABASE_KEY
+        scope: build
