@@ -1,5 +1,6 @@
 import os
 import logging
+import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters, ConversationHandler
 from dotenv import load_dotenv
@@ -12,7 +13,7 @@ from database import (
 load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_CHAT_ID = int(os.getenv("ADMIN_CHAT_ID"))
+ADMIN_CHAT_ID = int(os.getenv("ADMIN_CHAT_ID", "0"))
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -27,64 +28,75 @@ WAITING_FOR_FEE_PAYMENT = 2
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle /start command with optional referral code."""
-    user = update.effective_user
-    user_id = user.id
-    
-    existing_user = get_user(user_id)
-    
-    if existing_user:
-        # User already registered
-        await update.message.reply_text(
-            f"Welcome back, {user.first_name}! 👋\n\n"
-            f"Your balance: ${get_balance(user_id):.2f}\n"
-            f"Your referrals: {get_referral_count(user_id)}\n\n"
-            f"Use /menu to see available options."
-        )
-    else:
-        # New user registration
-        referral_code = None
-        if context.args:
-            referral_code = context.args[0]
+    try:
+        user = update.effective_user
+        user_id = user.id
         
-        # Create new user with 30 USDT bonus
-        new_user = create_user(user_id, user.username or "unknown", user.first_name)
+        existing_user = get_user(user_id)
         
-        if new_user:
-            # If referred by someone, add referral
-            if referral_code:
-                referrer = get_user_by_referral_code(referral_code)
-                if referrer:
-                    add_referral(referrer["user_id"], user_id)
-                    # Notify referrer
-                    await context.bot.send_message(
-                        chat_id=referrer["user_id"],
-                        text=f"🎉 Congratulations! You earned $30 USDT!\n\n"
-                        f"A new user joined through your referral link.\n"
-                        f"New user ID: {user_id}\n\n"
-                        f"Your new balance: ${get_balance(referrer['user_id']):.2f}"
-                    )
-            
-            # Notify admin
-            await context.bot.send_message(
-                chat_id=ADMIN_CHAT_ID,
-                text=f"✅ New user registered!\n\n"
-                f"User ID: {user_id}\n"
-                f"Username: {user.username or 'N/A'}\n"
-                f"Name: {user.first_name}\n"
-                f"Referral Code: {new_user['referral_code']}"
-            )
-            
-            # Send welcome message to new user
+        if existing_user:
+            # User already registered
             await update.message.reply_text(
-                f"Welcome, {user.first_name}! 🚀\n\n"
-                f"This is a highly profitable bot where you can earn a lot of money by inviting friends.\n\n"
-                f"You've received $30 USDT as a sign-up bonus!\n\n"
-                f"Your referral link: https://t.me/{(await context.bot.get_me()).username}?start={new_user['referral_code']}\n\n"
-                f"Share this link with your friends and earn $30 USDT for each friend who joins!\n\n"
+                f"Welcome back, {user.first_name}! 👋\n\n"
+                f"Your balance: ${get_balance(user_id):.2f}\n"
+                f"Your referrals: {get_referral_count(user_id)}\n\n"
                 f"Use /menu to see available options."
             )
         else:
-            await update.message.reply_text("Error creating user. Please try again later.")
+            # New user registration
+            referral_code = None
+            if context.args:
+                referral_code = context.args[0]
+            
+            # Create new user with 30 USDT bonus
+            new_user = create_user(user_id, user.username or "unknown", user.first_name)
+            
+            if new_user:
+                # If referred by someone, add referral
+                if referral_code:
+                    referrer = get_user_by_referral_code(referral_code)
+                    if referrer:
+                        add_referral(referrer["user_id"], user_id)
+                        # Notify referrer
+                        try:
+                            await context.bot.send_message(
+                                chat_id=referrer["user_id"],
+                                text=f"🎉 Congratulations! You earned $30 USDT!\n\n"
+                                f"A new user joined through your referral link.\n"
+                                f"New user ID: {user_id}\n\n"
+                                f"Your new balance: ${get_balance(referrer['user_id']):.2f}"
+                            )
+                        except Exception as e:
+                            logger.error(f"Failed to notify referrer: {e}")
+                
+                # Notify admin
+                try:
+                    await context.bot.send_message(
+                        chat_id=ADMIN_CHAT_ID,
+                        text=f"✅ New user registered!\n\n"
+                        f"User ID: {user_id}\n"
+                        f"Username: {user.username or 'N/A'}\n"
+                        f"Name: {user.first_name}\n"
+                        f"Referral Code: {new_user['referral_code']}"
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to notify admin: {e}")
+                
+                # Send welcome message to new user
+                bot_username = (await context.bot.get_me()).username
+                await update.message.reply_text(
+                    f"Welcome, {user.first_name}! 🚀\n\n"
+                    f"This is a highly profitable bot where you can earn a lot of money by inviting friends.\n\n"
+                    f"You've received $30 USDT as a sign-up bonus!\n\n"
+                    f"Your referral link: https://t.me/{bot_username}?start={new_user['referral_code']}\n\n"
+                    f"Share this link with your friends and earn $30 USDT for each friend who joins!\n\n"
+                    f"Use /menu to see available options."
+                )
+            else:
+                await update.message.reply_text("Error creating user. Please try again later.")
+    except Exception as e:
+        logger.error(f"Error in start command: {e}")
+        await update.message.reply_text("An error occurred. Please try again later.")
 
 
 async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
